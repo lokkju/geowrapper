@@ -7,6 +7,7 @@ class DataCatalog:
     pxpoint_datasets = {}
     spatial_layers = {}
     pxpoint_root = None
+    spatial_root = None
 
     def __init__(self, path_to_data_catalog, pxse_dir):
         dc = ET.parse(path_to_data_catalog)
@@ -15,10 +16,12 @@ class DataCatalog:
         license = dc.getroot().find('PxPointLicense')
 
         self.license_path = license.attrib['path']
-        self.license_key = license.attrib['key']
+        self.license_key = int(license.attrib['key'])
 
         datasets = dc.getroot().find('PxPointDatasets')
 
+        # set spatial root directory
+        self.spatial_root = pxse_dir
 
         # get dataset paths
         dataset_iterator = iter(datasets)
@@ -26,6 +29,7 @@ class DataCatalog:
             dataset_path = dataset.attrib['URI'].replace('file:///$PXSEDIR', pxse_dir)
             self.pxpoint_datasets[dataset.attrib['Name']] = dataset_path
 
+        # set pxpoint root directory
         if len(self.pxpoint_datasets) > 0:
             self.pxpoint_root = os.path.dirname(self.pxpoint_datasets.values()[0])
 
