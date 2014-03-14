@@ -17,12 +17,8 @@ import table
 # See http://www.iana.org/assignments/character-sets
 CHAR_SET_NAME = "UTF-8"
 
-# Standard indicator of success in PxPoint
-PXP_SUCCESS = pxcommon.error_str_to_code("SUCCESS")
-
-
-def load_dll():
-    """Load PxPointSC dll."""
+def load_library():
+    """Loads PxPointSC library."""
 
     if sys.platform.startswith("cygwin"):
         print >> sys.stderr, "ERROR: Not supported on cygwin.\n"\
@@ -196,7 +192,7 @@ def load_dll():
 
 
 def deserialize_table(table_handle):
-    """Deserialize a table handle to create a Table."""
+    """Deserializes a table handle to create a Table."""
 
     # This table_handle doesn't itself wrap a handle.
     size = PXPOINTSC.ByteArrayGetSize(table_handle)
@@ -221,7 +217,7 @@ def deserialize_table(table_handle):
 
 
 def deserialize_tableset(tableset_handle):
-    """Deserialize a tableset handle to create a TableSet."""
+    """Deserializes a tableset handle to create a TableSet."""
 
     # Get the actual handle value.
     tableset_handle = tableset_handle.value
@@ -248,7 +244,7 @@ def deserialize_tableset(tableset_handle):
 
 
 def geocoder_init(data_catalog):
-    """Initialize a Geocoder."""
+    """Initializes a Geocoder."""
     dataset_list = data_catalog.pxpoint_datasets.keys()
     # remove the all_us dataset
     dataset_list.remove("All")
@@ -280,7 +276,7 @@ def geocoder_geocode(
     err_col_definition,
     processing_options
 ):
-    """Perform a geocode operation."""
+    """Performs a geocode operation."""
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -316,7 +312,7 @@ def geocoder_find_aggregate(
     err_col_definition,
     processing_options
 ):
-    """Perform a find aggregate operation."""
+    """Performs a find aggregate operation."""
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -352,7 +348,7 @@ def geocoder_find_place(
     err_col_definition,
     processing_options
 ):
-    """Perform a find place operation."""
+    """Performs a find place operation."""
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -388,7 +384,7 @@ def geocoder_reverse_geocode(
     err_col_definition,
     processing_options
 ):
-    """Perform a reverse geocode operation."""
+    """Performs a reverse geocode operation."""
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -418,7 +414,7 @@ def geocoder_reverse_geocode(
 
 
 def geocoder_close(geocoder_handle):
-    """Remove static Geocoder object after all geocoding tasks."""
+    """Removes a static Geocoder object after all geocoding tasks."""
     message_buffer = ctypes.create_string_buffer(1024)
     return_code = PXPOINTSC.GeocoderClose(
         geocoder_handle.handle,
@@ -430,7 +426,7 @@ def geocoder_close(geocoder_handle):
 
 
 def geospatial_init(data_catalog):
-    """Initialize a geospatial processor."""
+    """Initializes a geospatial processor."""
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
     geospatial_handle = pxcommon.PxpHandleWrapper(
@@ -449,8 +445,28 @@ def geospatial_init(data_catalog):
 
 
 def geospatial_prepare(geospatial_handle, data_catalog, layer_alias_list):
-    """Attach a list of layers to a geospatial processor, and get back
-       a map from layer aliases to lists of output columns."""
+    """Prepares a spatial processor for queries.
+
+    The typical use case for a spatial processor is where a bunch of layers are 
+    used through the life of the application, and the caller always wants all 
+    the fields from each layer. But the fields to be asked for in PxPointSC 
+    must have the layer alias prepended, and the layer can't be queried unless
+    it's first been attached. So "preparing" here means attaching all the layers 
+    needed for querying, and getting back a mapping of layer aliases--the names 
+    the spatial processor recognizes for each layer--to lists of output fields 
+    already formatted for use in queries. 
+
+    Args:
+        geospatial_handle (int): A handle to the spatial processor.
+        data_catalog (DataCatalog): A container for maps of layer aliases to
+            full paths to layers.
+        layer_alias_list (list): A list of layer alias strings.
+
+    Returns:
+        A dictionary mapping layer alias strings to lists of formatted output
+        columns. E.g., { "Foo": [ "[Foo]field1", "[Foo]field2" ], 
+        "Bar" : [ "[Bar]field1", "[Bar]field2" ] }
+    """
     layer_alias_field_map = {}
     for layer_alias in layer_alias_list:
             # attach the layer
@@ -465,7 +481,7 @@ def geospatial_prepare(geospatial_handle, data_catalog, layer_alias_list):
             )
             return_code = return_code.value
             return_message = message_buffer.value.decode(CHAR_SET_NAME).strip()
-            if return_code != PXP_SUCCESS:
+            if return_code != pxcommon.PXP_SUCCESS:
                 raise RuntimeError("Error. Code: {c}. Message: {m}".format(
                     c=return_code, m=return_message))
             else:
@@ -505,7 +521,17 @@ def geospatial_prepare(geospatial_handle, data_catalog, layer_alias_list):
 
 
 def geospatial_detach_layer(geospatial_handle, layer_alias):
-    """Detach a layer from a geospatial processor."""
+    """Detaches a layer from a geospatial processor.
+    
+    Args:
+        geospatial_handle (int): A handle to the spatial processor.
+        layer_alias (str): the name of the layer to be detached.
+
+    Returns:
+        return_code (int): A PxPointSC return code.
+        return_message (str): A PxPointSC error message, if the return code is 
+        not 0 (indicating success), or the empty string.
+    """
     message_buffer = ctypes.create_string_buffer(1024)
     return_code = PXPOINTSC.GeoSpatialDetachLayer(
         geospatial_handle.handle,
@@ -542,7 +568,7 @@ def geospatial_query(
     )
     return_code = return_code.value
     return_message = message_buffer.value.decode(CHAR_SET_NAME).strip()
-    if return_code == PXP_SUCCESS:
+    if return_code == pxcommon.PXP_SUCCESS:
         output_tableset = deserialize_tableset(output_tableset_handle)
         output_table = output_tableset.tables["Output"]
         error_table = output_tableset.tables["Error"]
@@ -565,4 +591,4 @@ def geospatial_close(geospatial_handle):
     return_message = message_buffer.value.decode(CHAR_SET_NAME).strip()
     return return_code, return_message
 
-PXPOINTSC = load_dll()
+PXPOINTSC = load_library()

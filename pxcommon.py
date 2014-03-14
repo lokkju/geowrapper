@@ -104,7 +104,6 @@ WKT_POINT_FORMAT = 'POINT ( {x} {y} )'
 class SpatialRelation:
     NONE, INTERSECTS, TOUCHES, OVERLAPS, CONTAINS, WITHIN, CROSSES, DISJOINT, EQUALS, NEAR, EXTENTS = range(11)
     
-
 def get_spatial_relation_spec(relation):
     return 'Relation={r}'.format(r=relation)
 
@@ -149,6 +148,7 @@ def translate_incorrect_dataset_version_message(message):
         pass
     return message
 
+# Commonly used ctypes for PxPoint value types
 PxpBytePtr = ctypes.c_char_p
 PxpConstUTF8Ptr = ctypes.c_char_p
 PxpHandle = ctypes.c_void_p
@@ -157,6 +157,10 @@ PxpInt32Ptr = ctypes.POINTER(ctypes.c_int32)
 PxpUTF8Ptr = ctypes.c_char_p
 PxpUint32 = ctypes.c_uint32
 PxpUint64 = ctypes.c_uint64
+
+# Common return codes
+PXP_SUCCESS = error_str_to_code("SUCCESS")
+PXP_INVALID_ARGUMENT = error_str_to_code("INVALIDARGUMENT")
 
 
 class PxpHandleWrapper:
