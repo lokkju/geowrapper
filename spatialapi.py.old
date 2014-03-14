@@ -1,0 +1,423 @@
+#!/usr/bin/env python
+#
+# $Id$
+#
+
+""" Spatial API library, suitable for hosting in a web socket server."""
+
+# for logging information about calls
+import logging
+import socket
+import datetime
+# geocoder and spatial analyzer
+import pxpointsc
+# supporting libs for pxpointsc
+import pxcommon
+import table
+# supporting lib for spatialapi
+import json
+import datacatalog
+
+# standard status codes
+class StatusCode:
+    OK = 'OK'
+    NO_RESULTS = 'NO_RESULTS'
+    INVALID_REQUEST = 'INVALID_REQUEST'
+    SERVER_ERROR = 'SERVER_ERROR'
+
+
+class SpatialAPI:
+
+    """ 
+    ---------------------------------------------------------------------------------------
+    FIELDS
+
+    The private fields and supporting classes for geocoding and spatial analysis. 
+
+    ---------------------------------------------------------------------------------------
+
+    """
+
+    # input id column name, for both input and output tables
+    _INPUT_ID_COL_NAME = 'Id'
+
+    # input geometry column name
+    _INPUT_GEOMETRY_COL_NAME = 'InputGeometry'
+
+    # common error codes
+    _PXP_SUCCESS = pxcommon.error_str_to_code('SUCCESS')
+    _PXP_ERR_INVALIDARGUMENT = pxcommon.error_str_to_code('INVALIDARGUMENT')
+
+    # columns in the error table
+    _ERROR_TABLE_COLUMNS_DEF = '$ErrorCode;$ErrorMessage'
+
+    # geocoder finder options
+    _FINDER_OPTIONS_DEF = ''
+
+    # standard geocoder output table columns
+    _OUTPUT_TABLE_COLUMNS_DEF = ';'.join(
+        [
+            'INPUT.{col_id}'.format(col_id=_INPUT_ID_COL_NAME),
+            '$AddressLine',
+            '$City',
+            '$CityLine',
+            '$County',
+            '$Dataset',
+            '$ExtraFound',
+            '$IsIntersection',
+            '$Latitude',
+            '$Longitude',
+            '$MatchCode',
+            '$MatchDescription',
+            '$Number',
+            '$Postcode',
+            '$State',
+            '$StreetAddress',
+            '$StreetName',
+            '$StreetSide',
+            '$UnitNumber'
+        ])
+
+    # calls to pxpointsc for initialization all use this call id
+    _spatial_lib_call_id = 'INIT'
+
+    # load configuration file
+    config = {}
+    execfile('spatialapi.conf', config)
+
+    # configure logger
+    # messages should look like: '9999-12-01 23:59:59:99 [MACHINE/PXPOINTSC:INFO] message'
+    _logger = logging.getLogger('SPATIALAPI')
+    _logger.setLevel(config['LOGGING_LEVEL'])
+    fh = logging.FileHandler(config['LOG_FILE_PATH'])
+    fh.setFormatter(
+        logging.Formatter(
+            '%(asctime)s [{h}/PXPOINTSC:%(levelname)s] %(message)s'.format(h=socket.gethostname())
+        )
+    )
+    _logger.addHandler(fh)
+
+    # geocoding handle
+    _geocoder_handle = None
+
+    # geospatial querying handle
+    _geospatial_handle = None
+
+    """
+    ---------------------------------------------------------------------------------------
+
+    HELPER FUNCTIONS
+
+    Functions used by the spatial API.
+
+    ---------------------------------------------------------------------------------------
+
+    """
+
+    def create_server_error_json_result(message):
+        """Creates a JSON string from a server error message."""
+        status = StatusCode.SERVER_ERROR
+        return_obj = {}
+        return_obj['result'] = []
+        return_obj['status'] = status
+        return_obj['message'] = message
+        return (status, json.dumps(return_obj, sort_keys=True))
+    create_server_error_json_result = staticmethod(create_server_error_json_result)
+
+
+    def create_json_result_with_status(self, output_table, error_table, return_code, max_results=-1):
+        """Creates a JSON string from a PxPointSC result."""
+        result = []
+        status = StatusCode.OK
+        message = ''
+        if return_code == self._PXP_SUCCESS:
+            if (output_table == None or output_table.nrows == 0):
+                status  = StatusCode.SERVER_ERROR
+                message = 'Output table is empty, despite apparently successful geocode'
+            else:
+                for i in range(output_table.nrows()):
+                    current = {}
+                    row = output_table.rows[i]
+                    for j in range(output_table.ncols()):
+                        current[output_table.col_names[j]] = str(row[j]).encode('unicode_escape')
+                    result.append(current)
+                    if i == max_results:
+                        break
+        else:
+            if (error_table == None or error_table.nrows == 0):
+                status  = StatusCode.SERVER_ERROR
+                message = 'Error table is empty, despite apparent error'
+            else:
+                error_row = error_table.rows[0]
+                error_code = str(error_row[0])
+                error_message = str(error_row[1])
+                if return_code == self._PXP_ERR_INVALIDARGUMENT:
+                    status = StatusCode.INVALID_REQUEST
+                else:
+                    (status, error_message) = self.get_error_status_from_code(error_code)
+                message = 'Code: {c}. Message: {m}'.format(c=error_code, m=error_message)
+        return_obj = {}
+        return_obj['result'] = result
+        return_obj['status'] = status
+        return_obj['message'] = message
+        return (status, json.dumps(return_obj, sort_keys=True)) 
+
+
+    def create_address_input_table(self, call_id, address):
+        """Create an input table with a single row containing an address."""
+        input_table = table.Table()
+        input_table.append_col(self._INPUT_ID_COL_NAME)
+        input_table.append_col('$AddressLine')
+        input_table.append_row((call_id, address))
+        return input_table
+    create_address_input_table = classmethod(create_address_input_table)
+
+
+    def create_lat_lon_input_table(self, call_id, lat, lon):
+        """Create an input table with a single row."""
+        geometry = pxcommon.get_wkt_point_from_dec_coords(lat, lon)
+        input_table = table.Table()
+        input_table.append_col(self._INPUT_ID_COL_NAME)
+        input_table.append_col('InputGeometry')
+        input_table.append_row((str(call_id), geometry))
+        return input_table
+
+
+    def create_query_output_spec(self, call_id, layer_name):
+        """Create a list of output columns (with call_id from the input table coming first)"""
+        result = ['[{n}]INPUT.{c}'.format(n=layer_name, c=self._INPUT_ID_COL_NAME)]
+        fields = pxpointsc.get_fields(layer_name)
+        if fields == None:
+            fields = pxpointsc.geospatial_layer_info(self._geospatial_handle, layer_name)
+        output_spec = ['[{n}]{f}'.format(n=layer_name, f=field) for field in fields]
+        result.extend(output_spec)
+        return result 
+
+
+    def create_query_options(layer_alias, search_dist_meters=0):
+        proc_opts = 'InputGeoColumn=InputGeometry'
+        if search_dist_meters <= 0:
+            proc_opts = ';'.join([proc_opts, '[{a}]{o}'.format(a=layer_alias, o=pxcommon.get_spatial_relation_spec(pxcommon.SpatialRelation.WITHIN))])
+        else:
+            proc_opts = ';'.join([proc_opts, '[{a}]{o}'.format(a=layer_alias, o='FindNearest=T;[{a}]Distance={m}'.format(a=layer_alias, m=search_dist_meters))])
+        return proc_opts
+    create_query_options = staticmethod(create_query_options)
+
+
+    def get_error_status_from_code(error_code):
+        if error_code == pxcommon.err_str_to_code('GEOMETRY') or \
+            error_code == pxcommon.err_str_to_code('NULLGEOMETRY') or \
+            error_code == pxcommon.err_str_to_code('INVALIDGEOMETRY'):
+            return (StatusCode.SERVER_ERROR, 'Input geometry is invalid')
+        if error_code == pxcommon.err_str_to_code('NOTFOUND'):
+            return (StatusCode.NO_RESULTS, 'No features found')
+        if error_code == pxcommon.err_str_to_code('INVALIDQUERY'):
+            return (StatusCode.INVALID_REQUEST, pxcommon.err_code_to_str(error_code))
+        return (StatusCode.SERVER_ERROR, pxcommon.err_code_to_str(error_code))
+    get_error_status_from_code = staticmethod(get_error_status_from_code)
+
+    """
+    ---------------------------------------------------------------------------------------
+
+    CONSTRUCTOR
+
+    Initializes the spatial API.
+
+    ---------------------------------------------------------------------------------------
+
+    """
+
+    def __init__(self, config):
+        self._log_file_path = config['LOG_FILE_PATH']
+        self._logging_level = config['LOGGING_LEVEL'] 
+        datacatalog_path = config['DATACATALOG_PATH']
+        shapefile_root = config['SHAPEFILE_ROOT']
+
+        try:
+            self._datacatalog = datacatalog.DataCatalog(datacatalog_path, shapefile_root)
+
+            datasets = self._datacatalog.pxpoint_datasets.keys()
+            datasets.remove('All')
+            (self._geocoder_handle, self._geospatial_handle) = pxpointsc.pxpointsc_init(
+                datacatalog_path,
+                shapefile_root,
+                pxpointsc.geocoder_init,
+                pxpointsc.geospatial_init)
+            """
+            # initialize geocoder
+            (self._geocoder_handle, return_code, return_message) = pxpointsc.geocoder_init(
+                self._datacatalog.pxpoint_root,
+                datasets,
+                self._datacatalog.license_path,
+                int(self._datacatalog.license_key))
+            if return_code != self._PXP_SUCCESS:
+                raise RuntimeError('Error initializing geocoder. Code: {c}. Message: {m}'.format(
+                    c=return_code, m=return_message))
+            # initialize spatial processor
+            (self._geospatial_handle, return_code, return_message) = pxpointsc.geospatial_init(
+                shapefile_root,
+                self._datacatalog.license_path,
+                int(self._datacatalog.license_key))
+            if return_code != self._PXP_SUCCESS:
+                raise RuntimeError('Error initializing spatial processor. Code: {c}. Message: {m}'.format(
+                    c=return_code, m=return_message))
+            logging.info('spatialapi object initialized')
+            """
+        except RuntimeError as e:
+            logging.error('Error initializing spatialapi object. Message: {m}'.format(m=e.message))
+            raise
+
+    """
+    ---------------------------------------------------------------------------------------
+
+    API FUNCTIONS
+
+    ---------------------------------------------------------------------------------------
+
+    """
+
+    def query_layer(self, call_id, layer_alias, lat, lon, search_dist_meters, attach=True):
+        start = datetime.datetime.utcnow()
+        input_table = self.create_lat_lon_input_table(call_id, lat, lon)
+        try:
+            # attach the layer
+            if attach:
+                (return_code, return_message) = pxpointsc.geospatial_attach_layer(self._geospatial_handle, self._datacatalog.spatial_layers[layer_alias], layer_alias)
+                if return_code != 0:
+                    raise RuntimeError('Code: {c}. Message: {m}'.format(c=return_code, m=return_message))
+
+            # get the layer attributes
+            fields = pxpointsc.geospatial_layer_info(self._geospatial_handle, layer_alias)
+            fields = ['[{a}]{f}'.format(a=layer_alias, f=x) for x in fields]
+            output_columns = '[County]INPUT.Id;' + ';'.join(fields)
+
+            # pdb.set_trace()
+            # query using these attributes
+            proc_opts = 'InputGeoColumn=InputGeometry'
+            if search_dist_meters <= 0:
+                proc_opts = ';'.join([proc_opts, '[{a}]{o}'.format(a=layer_alias, o=pxcommon.get_spatial_relation_spec(pxcommon.SpatialRelation.WITHIN))])
+            else:
+                proc_opts = ';'.join([proc_opts, '[{a}]{o}'.format(a=layer_alias, o='FindNearest=T;[{a}]Distance={m}'.format(a=layer_alias, m=search_dist_meters))])
+
+            error_cols = self._ERROR_TABLE_COLUMNS_DEF.replace('$', '[{a}]$'.format(a=layer_alias))
+            (output_table, error_table, return_code, return_message) = pxpointsc.geospatial_query(
+                self._geospatial_handle,
+                input_table,
+                output_columns,
+                error_cols,
+                proc_opts
+            )
+            (status, json_results) = self.create_json_result_with_status(output_table, error_table, return_code, 1)
+            """
+            if output_table != None and output_table.nrows > 0:
+                print('Query OK')
+                for i in range(output_table.nrows()):
+                    row = output_table.rows[i]
+                    for j in range(output_table.ncols()):
+                        print(output_table.col_names[j] + ': ' + str(row[j]))
+            else:
+            """
+            return json_results
+        except RuntimeError as e:
+            print(e.message)
+        return None
+
+    def get_location(self, call_id, address): 
+        """Performs a geocode of the specified address"""
+        start = datetime.datetime.utcnow()
+        json_results = None
+        try:
+            logging.info('{c} location address="{a}" entry'.format(c=call_id, a=address))
+            (
+                output_table,
+                error_table,
+                return_code,
+                _ 
+            ) = pxpointsc.geocoder_geocode(
+                self._geocoder_handle,
+                self.create_address_input_table(call_id, address),
+                self._OUTPUT_TABLE_COLUMNS_DEF,
+                self._ERROR_TABLE_COLUMNS_DEF,
+                self._FINDER_OPTIONS_DEF)
+            elapsed = (datetime.datetime.utcnow() - start).total_seconds()
+            (status, json_results) = self.create_json_result_with_status(output_table, error_table, return_code)
+            logging.info('{c} location (status={s}) elapsed="{e}"'.format(c=call_id, s=status, e=elapsed))
+        except RuntimeError as e:
+            logging.error('{c} Error calling get_location(address="{a}"). Message: {m}'.format(
+                c=call_id, a=address, m=e.message))
+            (status, json_results) = SpatialAPI.create_server_error_json_result(e.message)
+        return json_results
+
+    def _query_layer(self, call_id, layer_name, lat, lon, max_search_distance_meters=0, max_results=1):
+        """Queries a layer for information about a location"""
+        start = datetime.datetime.utcnow()
+        json_results = None
+        try:
+            logging.info('{c} query(point=({y}, {x}), max_search_dist={d},max_results={r}) entry'.format(
+                c=call_id, 
+                y=lat, 
+                x=lon, 
+                d=max_search_distance_meters, 
+                r=max_results))
+            (return_code, return_message) = pxpointsc.geospatial_attach_layer(self._geospatial_handle, self._datacatalog.spatial_layers[layer_name], layer_name)
+            if return_code != self._PXP_SUCCESS:
+                raise RuntimeError(return_message)
+            input_table = self.create_lat_lon_input_table(call_id, lat, lon)
+            print(input_table.ncols())
+            print(input_table.rows[0])
+            output_cols = self.create_query_output_spec(call_id, layer_name)
+            query_options = SpatialAPI.create_query_options(layer_name, max_search_distance_meters)
+            error_cols = self._ERROR_TABLE_COLUMNS_DEF.replace('$', '[{a}]$'.format(a=layer_name))
+            print('Output cols: ' + ';'.join(output_cols))
+            print('Query options: ' + query_options)
+            print('Error cols: ' + error_cols)
+            (output_table, error_table, return_code, return_message) = pxpointsc.geospatial_query(
+                self._geospatial_handle,
+                input_table,
+                output_cols,
+                error_cols,
+                query_options
+            )
+            elapsed = (datetime.datetime.utcnow() - start).total_seconds()
+            (status, json_results) = create_json_result_with_status(output_table, error_table, return_code, max_results)
+            logging.info('{c} query {l} (status={s}) elapsed={e}'.format(
+                c=call_id, 
+                l=layer_name, 
+                s=status, 
+                e=elapsed))
+        except RuntimeError as e:
+            logging.error('{c} Error calling query_location(inputgeo="({y},{x})"). Message: {m}'.format(
+                c=call_id, 
+                y=lat,
+                x=lon,
+                m=e.message))
+            (status, json_results) = SpatialAPI.create_server_error_json_result(e.message)
+        return json_results
+
+    def get_layer_info(self, call_id, layer_name):
+        """Gets the names of the fields in a layer"""
+        start = datetime.datetime.utcnow()
+        json_results = None
+        try:
+            logging.info('{c} get_layer_info(layer_name={l}) entry'.format(
+                l=layer_name))
+            fields = pxpointsc.geospatial_layer_info(_geospatial_handle, layer_name)
+            json_results = {}
+            layer_fields = {}
+            layer_fields['name'] = layer_name
+            layer_fields['fields'] = fields
+            json_results['result'] = layer_fields
+            json_results['status'] = StatusCode.OK
+            json_results['message'] = ''
+            elapsed = (datetime.datetime.utcnow() - start).total_seconds()
+            logging.info('{c} get_layer_info(status={s}) elapsed={e}'.format(
+                c=call_id,
+                s=StatusCode.OK, 
+                e=elapsed))
+        except RuntimeError as e:
+            logging.error('{c} Error calling get_layer_info(layer_name="{l}"). Message: {m}'.format(
+                c=call_id, 
+                l=layer_name, 
+                m=e.message))
+            json_results = SpatialAPI.create_server_error_json_result(e.message)
+        return json_results
