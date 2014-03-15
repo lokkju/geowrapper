@@ -192,7 +192,11 @@ def load_library():
 
 
 def deserialize_table(table_handle):
-    """Deserializes a table handle to create a Table."""
+    """Deserializes a table handle to create a Table.
+    
+    Args:
+        table_handle (int): Handle to the table to deserialize.
+    """
 
     # This table_handle doesn't itself wrap a handle.
     size = PXPOINTSC.ByteArrayGetSize(table_handle)
@@ -217,7 +221,11 @@ def deserialize_table(table_handle):
 
 
 def deserialize_tableset(tableset_handle):
-    """Deserializes a tableset handle to create a TableSet."""
+    """Deserializes a tableset handle to create a TableSet.
+    
+    Args:
+        tableset_handle (int): Handle to the tableset to deserialize.
+    """
 
     # Get the actual handle value.
     tableset_handle = tableset_handle.value
@@ -244,7 +252,17 @@ def deserialize_tableset(tableset_handle):
 
 
 def geocoder_init(data_catalog):
-    """Initializes a Geocoder."""
+    """Initializes a Geocoder.
+    
+    Args:
+        data_catalog (DataCatalog): The DataCatalog containing license
+            and geocoding dataset paths for use in initializing a PxPointSC 
+            geocoder.
+
+    Returns:
+        A handle to the PxPointSC geocoder, a return code (0 = success),
+        and a return message (empty = success).
+    """
     dataset_list = data_catalog.pxpoint_datasets.keys()
     # remove the all_us dataset
     dataset_list.remove("All")

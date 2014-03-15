@@ -100,15 +100,15 @@ ERROR_CODE_MAP = {
 
 WKT_POINT_FORMAT = 'POINT ( {x} {y} )'
 
-# Enumeration of spatial relations, for specifying geospatial operations
 class SpatialRelation:
+    """Enumerates spatial relations for use in PxPointSC layer queries."""
     NONE, INTERSECTS, TOUCHES, OVERLAPS, CONTAINS, WITHIN, CROSSES, DISJOINT, EQUALS, NEAR, EXTENTS = range(11)
     
 def get_spatial_relation_spec(relation):
     return 'Relation={r}'.format(r=relation)
 
 def error_code_to_str(error_code):
-    """Return the string representation of an integer error_code."""
+    """Returns the string representation of an integer error_code."""
     if error_code in ERROR_CODE_MAP:
         return ERROR_CODE_MAP[error_code]
     else:
@@ -116,7 +116,7 @@ def error_code_to_str(error_code):
 
 
 def error_str_to_code(error_str):
-    """Return the integer representation of a string error_str."""
+    """Returns the integer representation of a string error_str."""
     for key, val in ERROR_CODE_MAP.items():
         if error_str == val:
             return key
@@ -127,7 +127,7 @@ def get_wkt_point_from_dec_coords(lat, lon):
     return WKT_POINT_FORMAT.format(x=lon, y=lat)
 
 def translate_incorrect_dataset_version_message(message):
-    """Translate the message associated with error_code = -84 to a
+    """Translates the message associated with error_code = -84 to a
     one-liner."""
     try:
         gdx_filename = re.search("gdx file: (.+)\n", message).group(1)
@@ -170,9 +170,9 @@ class PxpHandleWrapper:
 
 
 def serialize_table(tabl):
-    """Serialize an input table.  We should be able to pass the
+    """Serializes an input table.  We should be able to pass the
     bytearray returned by table.serialize() directly, but as of
-    2012-05-08, ctypes does not that.
+    2012-05-08, ctypes does not do that.
     """
     (tabl_ba, tabl_ba_len) = tabl.serialize()
     tabl_c_byte_array = ctypes.c_byte * tabl_ba_len

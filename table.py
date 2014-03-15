@@ -21,7 +21,12 @@ class Table:
         self.rows = list()
 
     def append_col(self, col_name, col_var_type=None):
-        """Append a column to the table."""
+        """Appends a column to the table.
+        
+        Args:
+            col_name (str): The name of the column to add.
+            col_var_type (variant.VarType): The column's variant type.
+        """
         self.col_names.append(col_name)
         if col_var_type == None:
             self.col_var_types.append(variant.VarType.String)
@@ -29,29 +34,41 @@ class Table:
             self.col_var_types.append(col_var_type)
 
     def ncols(self):
-        """Return number of columns."""
+        """Returns the number of columns."""
         return len(self.col_names)
 
     def append_row(self, row):
-        """Append a row to the table."""
+        """Appends a row to the table.
+        
+        Args:
+            row (tuple): The values to add, in column order.
+        """
         self.rows.append(row)
 
     def nrows(self):
-        """Return number of rows."""
+        """Returns the number of rows."""
         return len(self.rows)
 
     def is_empty(self):
-        """Return True if the table has no rows."""
+        """Returns True if the table has no rows."""
         return len(self.rows) == 0
 
     def row(self, index):
-        """Return row by index."""
+        """Returns a row by index.
+        
+        Args:
+            index (int): The index of the row to return.
+        """
         return self.rows[index]
 
     def serialize(self):
-        """Serialize the table to a bytearray that will be read by
-        Table::Deserialize() in geocoder/PxLib/Table.cpp."""
-        nrows = len(self.rows)
+        """Serializes the table to a bytearray that will be read by
+        Table::Deserialize() in geocoder/PxLib/Table.cpp.
+        
+        Returns:
+            The byte array containing the serialized table, and the
+            offset int indicating the length of the array.
+        """
         ncolumns = len(self.col_names)
         if ncolumns == 0:
             raise ValueError("Table contains no columns")
@@ -88,12 +105,21 @@ class Table:
             for col_variant, value in zip(col_variants, row):
                 offset = col_variant.serialize(buff, offset, value)
 
-        return (buff, offset)
+        return buff, offset
 
     def deserialize(self, buff, offset):
-        """Deserialize the table from a bytearray created by
+        """Deserializes the table from a bytearray created by
         Table::Serialize() in geocoder/PxLib/Table.cpp. and
-        ByteWriter::writeVariant in geocoder/PxLib/ByteWriter.cpp"""
+        ByteWriter::writeVariant in geocoder/PxLib/ByteWriter.cpp
+
+        Args:
+            buff (bytearray): The byte array containing the serialized table.
+            offset (int): The location in the array from which to begin the
+                deserialization.
+
+        Returns:
+            offset (int): The offset into the bytearray after deserialization.
+        """
 
         # Table magic number.
         (magic, ) = struct.unpack_from("<I", buff, offset)
@@ -154,7 +180,7 @@ class Table:
         return offset
 
     def __str__(self):
-        """Create human-readable representation of the table."""
+        """Creates a human-readable representation of the table."""
         # Determine the column widths.
         max_widths = [0] * len(self.col_names)
         for col, name in enumerate(self.col_names):
@@ -194,7 +220,7 @@ class Table:
         return string
 
     def str_csv(self, delimiter=None):
-        """Create CSV representation of the table."""
+        """Creates a CSV representation of the table."""
         if delimiter == None:
             delimiter = "|"
         string = "\n".join(
