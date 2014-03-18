@@ -294,7 +294,30 @@ def geocoder_geocode(
     err_col_definition,
     processing_options
 ):
-    """Performs a geocode operation."""
+    """Performs a geocode operation.
+
+    Args:
+        geocoder_handle (int): A handle to the PxPointSC geocoder.
+        input_table (Table): A table containing rows of input address data.
+        out_col_definition (str): A semicolon-delimited list of desired output 
+            columns.
+        err_col_definition (str): A semicolon-delimited list of desired error
+            columns.
+        processing_options (str): A semicolon-delimited list of processing 
+            options.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        output_table (Table): The table of output rows, with columns defined 
+            by the out_col_definition.
+        error_table (Table): The table of error rows, with columns defined by
+            the err_col_definition.
+        return_code (int): The return code from PxPointSC's GeocoderGeocode 
+            operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeocoderGeocode operation (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -330,7 +353,30 @@ def geocoder_find_aggregate(
     err_col_definition,
     processing_options
 ):
-    """Performs a find aggregate operation."""
+    """Performs a find aggregate operation.
+
+    Args:
+        geocoder_handle (int): A handle to the PxPointSC geocoder.
+        input_table (Table): A table containing rows of input address data.
+        out_col_definition (str): A semicolon-delimited list of desired output 
+            columns.
+        err_col_definition (str): A semicolon-delimited list of desired error
+            columns.
+        processing_options (str): A semicolon-delimited list of processing 
+            options.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        output_table (Table): The table of output rows, with columns defined 
+            by the out_col_definition.
+        error_table (Table): The table of error rows, with columns defined by
+            the err_col_definition.
+        return_code (int): The return code from PxPointSC's 
+            GeocoderFindAggregate operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeocoderFindAggregate operation (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -366,7 +412,30 @@ def geocoder_find_place(
     err_col_definition,
     processing_options
 ):
-    """Performs a find place operation."""
+    """Performs a find place operation.
+
+    Args:
+        geocoder_handle (int): A handle to the PxPointSC geocoder.
+        input_table (Table): A table containing rows of input address data.
+        out_col_definition (str): A semicolon-delimited list of desired output 
+            columns.
+        err_col_definition (str): A semicolon-delimited list of desired error
+            columns.
+        processing_options (str): A semicolon-delimited list of processing 
+            options.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        output_table (Table): The table of output rows, with columns defined 
+            by the out_col_definition.
+        error_table (Table): The table of error rows, with columns defined by
+            the err_col_definition.
+        return_code (int): The return code from PxPointSC's GeocoderFindPlace
+            operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeocoderFindPlace operation (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -402,7 +471,30 @@ def geocoder_reverse_geocode(
     err_col_definition,
     processing_options
 ):
-    """Performs a reverse geocode operation."""
+    """Performs a reverse geocode operation.
+
+    Args:
+        geocoder_handle (int): A handle to the PxPointSC geocoder.
+        input_table (Table): A table containing rows of input address data.
+        out_col_definition (str): A semicolon-delimited list of desired output 
+            columns.
+        err_col_definition (str): A semicolon-delimited list of desired error
+            columns.
+        processing_options (str): A semicolon-delimited list of processing 
+            options.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        output_table (Table): The table of output rows, with columns defined 
+            by the out_col_definition.
+        error_table (Table): The table of error rows, with columns defined by
+            the err_col_definition.
+        return_code (int): The return code from PxPointSC's 
+            GeocoderReverseGeocode operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeocoderReverseGeocode operation (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -432,7 +524,19 @@ def geocoder_reverse_geocode(
 
 
 def geocoder_close(geocoder_handle):
-    """Removes a static Geocoder object after all geocoding tasks."""
+    """Removes a static Geocoder object after all geocoding tasks.
+
+    Args:
+        geocoder_handle (int): A handle to the PxPointSC geocoder.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        return_code (int): The return code from PxPointSC's GeocoderClose
+            operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeocoderClose operation (empty = success).
+    """
     message_buffer = ctypes.create_string_buffer(1024)
     return_code = PXPOINTSC.GeocoderClose(
         geocoder_handle.handle,
@@ -444,7 +548,17 @@ def geocoder_close(geocoder_handle):
 
 
 def geospatial_init(data_catalog):
-    """Initializes a geospatial processor."""
+    """Initializes a spatial processor.
+    
+    Args:
+        data_catalog (DataCatalog): The DataCatalog containing license
+            and geocoding dataset paths for use in initializing a PxPointSC 
+            spatial processor.
+
+    Returns:
+        A handle to the PxPointSC spatial processor, a return code 
+            (0 = success), and a return message (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
     geospatial_handle = pxcommon.PxpHandleWrapper(
@@ -568,7 +682,30 @@ def geospatial_query(
     err_col_definition,
     processing_options
 ):
-    """Perform a geospatial query operation."""
+    """Performs a geospatial query operation.
+
+    Args:
+        geospatial_handle (int): A handle to the PxPointSC spatial processor.
+        input_table (Table): A table containing rows of input location data.
+        out_col_definition (str): A semicolon-delimited list of desired output 
+            columns.
+        err_col_definition (str): A semicolon-delimited list of desired error
+            columns.
+        processing_options (str): A semicolon-delimited list of processing 
+            options.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        output_table (Table): The table of output rows, with columns defined 
+            by the out_col_definition.
+        error_table (Table): The table of error rows, with columns defined by
+            the err_col_definition.
+        return_code (int): The return code from PxPointSC's GeoSpatialQuery
+            operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeoSpatialQuery operation (empty = success).
+    """
     return_code = pxcommon.PxpInt32()
     message_buffer = ctypes.create_string_buffer(1024)
 
@@ -598,7 +735,19 @@ def geospatial_query(
 
 
 def geospatial_close(geospatial_handle):
-    """Close a geospatial processor, after all queries."""
+    """Removes a static GeoSpatial object after all geocoding tasks.
+
+    Args:
+        geospatial_handle (int): A handle to the PxPointSC spatial processor.
+
+    Returns:
+        A tuple with the following items, in order:
+
+        return_code (int): The return code from PxPointSC's GeoSpatialClose
+            operation (0 = success).
+        return_message (str): The return message from PxPointSC's 
+            GeoSpatialClose operation (empty = success).
+    """
     message_buffer = ctypes.create_string_buffer(1024)
 
     return_code = PXPOINTSC.GeoSpatialClose(
